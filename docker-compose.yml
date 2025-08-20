@@ -1,0 +1,12 @@
+services:
+  redis:
+    container_name: redis-poc-golang-asynq-service
+    image: redis:6-alpine
+    ports:
+      - 6379:6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 30s
+      retries: 50
+    restart: always
