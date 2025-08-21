@@ -2,45 +2,92 @@ package main
 
 import (
 	"fmt"
-	"strconv"
+	"log"
 	"sync"
 	"time"
 
-	"github.com/panachainy/poc-golang-ants/background_job"
+	"github.com/hibiken/asynq"
+	"github.com/panachainy/poc-golang-asynq/tasks"
 )
 
 var wg sync.WaitGroup
 
 func main() {
-	bgj, err := background_job.NewAntsBackgroundJob(10)
+	const redisAddr = "127.0.0.1:6379"
+
+	client := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
+	defer client.Close()
+
+	// ------------------------------------------------------
+	// Example 1: Enqueue task to be processed immediately.
+	//            Use (*Client).Enqueue method.
+	// ------------------------------------------------------
+
+	task, err := tasks.NewEmailDeliveryTask(42, "some:template:id")
 	if err != nil {
-		panic(err)
+		log.Fatalf("could not create task: %v", err)
 	}
-
-	runTimes := 100
-	wg.Add(runTimes)
-
-	for i := 0; i < runTimes; i++ {
-		taskId := i + 1
-		err := bgj.Submit(
-			withDurationLog(func() {
-				defer wg.Done()
-				exampleTask()
-			},
-				strconv.Itoa(taskId),
-			),
-		)
-		if err != nil {
-			fmt.Printf("Error submitting task %d: %v\n", taskId, err)
-		}
-		fmt.Printf("test after submit %v\n", taskId)
+	info, err := client.Enqueue(task)
+	if err != nil {
+		log.Fatalf("could not enqueue task: %v", err)
 	}
+	log.Printf("enqueued task: id=%s queue=%s", info.ID, info.Queue)
 
-	wg.Wait()
+	// ------------------------------------------------------------
+	// Example 2: Schedule task to be processed in the future.
+	//            Use ProcessIn or ProcessAt option.
+	// ------------------------------------------------------------
 
-	// TODO: get return from task to do next step
+	info, err = client.Enqueue(task, asynq.ProcessIn(24*time.Hour))
+	if err != nil {
+		log.Fatalf("could not schedule task: %v", err)
+	}
+	log.Printf("enqueued task: id=%s queue=%s", info.ID, info.Queue)
 
-	fmt.Println("done")
+	// ----------------------------------------------------------------------------
+	// Example 3: Set other options to tune task processing behavior.
+	//            Options include MaxRetry, Queue, Timeout, Deadline, Unique etc.
+	// ----------------------------------------------------------------------------
+
+	task, err = tasks.NewImageResizeTask("https://example.com/myassets/image.jpg")
+	if err != nil {
+		log.Fatalf("could not create task: %v", err)
+	}
+	info, err = client.Enqueue(task, asynq.MaxRetry(10), asynq.Timeout(3*time.Minute))
+	if err != nil {
+		log.Fatalf("could not enqueue task: %v", err)
+	}
+	log.Printf("enqueued task: id=%s queue=%s", info.ID, info.Queue)
+
+	// bgj, err := background_job.NewAntsBackgroundJob(10)
+	// if err != nil {
+	// 	panic(err)
+	// }
+
+	// runTimes := 100
+	// wg.Add(runTimes)
+
+	// for i := 0; i < runTimes; i++ {
+	// 	taskId := i + 1
+	// 	err := bgj.Submit(
+	// 		withDurationLog(func() {
+	// 			defer wg.Done()
+	// 			exampleTask()
+	// 		},
+	// 			strconv.Itoa(taskId),
+	// 		),
+	// 	)
+	// 	if err != nil {
+	// 		fmt.Printf("Error submitting task %d: %v\n", taskId, err)
+	// 	}
+	// 	fmt.Printf("test after submit %v\n", taskId)
+	// }
+
+	// wg.Wait()
+
+	// // TODO: get return from task to do next step
+
+	// fmt.Println("done")
 }
 
 func exampleTask() {
